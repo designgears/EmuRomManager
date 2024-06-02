@@ -1,0 +1,534 @@
+import os
+import re
+import json
+import hashlib
+import threading
+import queue
+from pathlib import Path
+import tkinter as tk
+from tkinter import ttk, filedialog
+from PIL import Image, ImageTk
+import requests
+from io import BytesIO
+from thefuzz import fuzz, process
+import subprocess
+from typing import Dict, List, Optional
+from ttkbootstrap import Style
+
+NSZ_PATTERN = re.compile(r"(?P<name>.*)\[(?:(?P<titleid>[A-Za-z0-9]{16}).*|\[(?P<region>[A-Z]{2})\].*|\[v(?P<version>\d{1,})\].*){2}(?:\.nsz|\.nsp)")
+
+current_game = None
+script_dir = os.path.dirname(os.path.abspath(__file__))
+
+class FileManager:
+    def __init__(self, game_manager=None, image_manager=None) -> None:
+        self.files: Dict[str, Dict] = {}
+        self.choices: Dict[str, str] = {}
+        self.titles_db_path = os.path.join(script_dir, "titledb", "titles.json")
+        self.titles_db_url = "https://tinfoil.media/repo/db/titles.json"
+        self.load_count = 0
+        self.chunk_size = 100
+        self.game_manager = game_manager
+        self.image_manager = image_manager
+
+        os.makedirs(os.path.dirname(self.titles_db_path), exist_ok=True)
+
+    def load_data(self, filepath: str) -> None:
+        try:
+            if os.path.exists(filepath):
+                with open(filepath, 'r') as file:
+                    data = json.load(file)
+                    self.files = data
+                    self.load_count = 0
+                    self.populate_treeview()
+                    self.update_choices()
+        except (json.JSONDecodeError, IOError) as e:
+            print(f"Error loading data: {e}")
+
+    def update_choices(self) -> None:
+        for key, file_data in self.files.items():
+            if file_data.get('id') and file_data.get('name'):
+                self.choices[key] = f"{file_data['name']} {file_data['id']}"
+
+    def sort_files_by_rank(self) -> None:
+        sorted_keys = sorted(self.files, key=lambda x: self.files[x].get('rank', 999999))
+        sorted_files = {key: self.files[key] for key in sorted_keys}
+        self.files = sorted_files
+
+    def type_check(self, check_digit: str) -> str:
+        type_mapping = {"000": "base", "800": "update"}
+        return type_mapping.get(check_digit, "dlc")
+
+    def download_titles_db(self) -> bool:
+        try:
+            response = requests.get(self.titles_db_url)
+            response.raise_for_status()
+            with open(self.titles_db_path, 'wb') as file:
+                file.write(response.content)
+            return True
+        except requests.RequestException as e:
+            print(f"Failed to download titles.json: {e}")
+            return False
+
+    def scan_files(seld, directory, pattern):
+        scanned_files = []
+        stack = [directory]
+        while stack:
+            current_dir = stack.pop()
+            with os.scandir(current_dir) as it:
+                for entry in it:
+                    if entry.is_dir(follow_symlinks=False):
+                        stack.append(entry.path)
+                    elif entry.is_file(follow_symlinks=False) and pattern.search(entry.name):
+                        scanned_files.append(entry.path)
+        return scanned_files
+
+    def refresh_files_thread(self, directory: str) -> None:
+        thread = threading.Thread(target=self._refresh_files, args=(directory,))
+        thread.start()
+
+    def _refresh_files(self, directory: str) -> None:
+        self.game_manager.progress_bar.config(mode='indeterminate')
+        self.game_manager.progress_bar.start(10)
+        self.files.clear()
+        self.choices.clear()
+
+        titles_db_available = os.path.exists(self.titles_db_path) or self.download_titles_db()
+        scanned_files = self.scan_files(directory, NSZ_PATTERN)
+
+        for filename in scanned_files:
+            match = NSZ_PATTERN.search(os.path.basename(filename))
+            titleid = match.group('titleid')
+            if titleid:
+                file_type = self.type_check(titleid[-3:])
+                if file_type == 'dlc':
+                    key = f"{int(titleid, 16)-0x1000:0{16}X}"[:-3]
+                else:
+                    key = titleid[:-3]
+                if key not in self.files:
+                    self.files[key] = {
+                        'name': match.group('name').strip() or None,
+                        'id': titleid,
+                        'region': match.group('region') or None,
+                        'size': None,
+                        'base': [],
+                        'update': [],
+                        'dlc': [],
+                        'intro': None,
+                        'iconUrl': None,
+                    }
+                self.files[key][file_type].append(filename)
+                self.choices[key] = f"{match.group('name')} {titleid}"
+
+        if titles_db_available:
+            try:
+                with open(self.titles_db_path, "r") as file:
+                    data = json.load(file)
+                    for title in data:
+                        title_data = data[title]
+                        if title_data['id'] and title_data['nsuId']:
+                            key = title_data['id'][:-3]
+                            if self.type_check(title_data['id'][-3:]) == "base" and key in self.files:
+                                self.choices[key] = f"{title_data['name']} {title_data['id']}"
+                                del title_data['description']
+                                del title_data['regions']
+                                self.files[key].update(title_data)
+            except (json.JSONDecodeError, IOError) as e:
+                print(f"Error reading titles database: {e}")
+
+        self.sort_files_by_rank()
+        
+        try:
+            with open(os.path.join(script_dir, "result.json"), 'w') as fp:
+                json.dump(self.files, fp)
+            self.load_count = 0
+            self.populate_treeview()
+        except IOError as e:
+            print(f"Error saving data: {e}")
+        finally:
+            self.game_manager.progress_var.set(0)
+            self.game_manager.progress_bar.config(mode='determinate')
+            self.game_manager.progress_bar.stop()
+
+    def populate_treeview(self) -> None:
+        self.clear_treeview()
+        self.load_more_items()
+
+    def load_more_items(self) -> None:
+        count = 0
+        keys = list(self.files.keys())[self.load_count:self.load_count + self.chunk_size]
+        for key in keys:
+            self.game_manager.treeview.insert("", tk.END, text=self.files[key]['name'] or '', values=(self.files[key]['id'], self.files[key]['region'] or ''))
+            count += 1
+        self.load_count += count
+    
+    def clear_treeview(self) -> None:
+        self.game_manager.treeview.delete(*self.game_manager.treeview.get_children())
+
+    def refresh(self) -> None:
+        directory = filedialog.askdirectory()
+        if directory:
+            self.refresh_files_thread(directory)
+
+class ImageManager:
+    def __init__(self, game_manager=None, file_manager=None) -> None:
+        self.image_queue: queue.Queue = queue.Queue()
+        self.stop_event: threading.Event = threading.Event()
+        self.current_item: Optional[str] = None
+        self.cache_dir: str = os.path.join(script_dir, "image_cache")
+        os.makedirs(self.cache_dir, exist_ok=True)
+        self.default_image_path: str = os.path.join(script_dir, "images", "no_image.png")
+        self.transparent_image_path: str = os.path.join(script_dir, "images", "loading.png")
+        self.game_manager = game_manager
+        self.file_manager = file_manager
+
+    def fetch_image_data(self, url: str, item: str, label: ttk.Label) -> None:
+        try:
+            if self.stop_event.is_set():
+                return
+
+            if url and "http" in url:
+                filename = hashlib.md5(url.encode()).hexdigest() + '.png'
+                filepath = os.path.join(self.cache_dir, filename)
+            else:
+                filepath = self.default_image_path
+
+            if "http" in str(url) and not os.path.isfile(filepath):
+                response = requests.get(url)
+                response.raise_for_status()
+                with Image.open(BytesIO(response.content)) as img:
+                    img.thumbnail((200, 200), Image.LANCZOS)
+                    img.save(filepath)
+
+            if not os.path.isfile(filepath):
+                filepath = self.default_image_path
+
+            with Image.open(filepath) as img:
+                img.thumbnail((200, 200), Image.LANCZOS)
+                photo = ImageTk.PhotoImage(img)
+                if not self.stop_event.is_set() and item == self.current_item:
+                    self.image_queue.put(photo)
+
+        except requests.HTTPError as e:
+            print(f"HTTP error occurred: {e}")
+            self.load_default_image(item, self.default_image_path)
+        except Exception as e:
+            print(f"Error processing image: {e}")
+            self.load_default_image(item, self.default_image_path)
+
+    def load_default_image(self, item: str, img_path: str) -> None:
+        if not self.stop_event.is_set() and item == self.current_item:
+            with Image.open(img_path) as img:
+                img.thumbnail((200, 200), Image.LANCZOS)
+                photo = ImageTk.PhotoImage(img)
+                self.image_queue.put(photo)
+
+    def check_queue(self, label: ttk.Label) -> None:
+        try:
+            photo = self.image_queue.get_nowait()
+            label.config(image=photo)
+            label.image = photo
+        except queue.Empty:
+            pass
+        label.after(100, self.check_queue, label)
+
+    def start_fetch_thread(self, url: str, item: str, label: ttk.Label) -> None:
+        if item == self.current_item:
+            return
+        self.stop_event.set()
+        with self.image_queue.mutex:
+            self.image_queue.queue.clear()
+        self.stop_event.clear()
+        self.current_item = item
+        self.load_default_image(item, self.transparent_image_path)
+        threading.Thread(target=self.fetch_image_data, args=(url, item, label)).start()
+
+class GameManager:
+    def __init__(self, root: tk.Tk) -> None:
+        self.root = root
+        self.file_manager = FileManager(game_manager=self)
+        self.image_manager = ImageManager(game_manager=self)
+        self.file_manager.image_manager = self.image_manager
+        self.setup_ui()
+        self.file_manager.load_data(os.path.join(script_dir, "result.json"))
+        self.image_manager.check_queue(self.image_label)
+        self.mlist_file_path = os.path.join(script_dir, "mlist.txt")
+        self.cleanup_mlist()
+        self.transfer_in_progress = False
+
+    def on_entry_click(self, event: tk.Event) -> None:
+        if self.search_field.get() == 'Search...':
+            self.search_field.delete(0, "end")
+            self.search_field.insert(0, '')
+            self.search_field.config(foreground='white')
+
+    def on_focusout(self, event: tk.Event) -> None:
+        if self.search_field.get() == '':
+            self.search_field.insert(0, 'Search...')
+            self.search_field.config(foreground='grey')
+
+    def setup_ui(self) -> None:
+        self.root.geometry("800x600")
+        self.root.resizable(False, False)
+        self.root.title("EmuRomManager")
+
+        icon_path = os.path.join(script_dir, "switch.ico")
+        if os.path.exists(icon_path):
+            self.root.iconbitmap(icon_path)
+
+        self.root.eval("tk::PlaceWindow . center")
+        style = Style('darkly')
+
+        style.configure("Treeview", rowheight=45, font=('Helvetica', 11))
+        style.configure("TButton", font=("Helvetica", 12))
+        style.configure("Treeview.Heading", background="#263D55", font=('Helvetica', 11))
+        style.configure("Vertical.Progressbar", troughcolor='red', background='green', thickness=30)
+        style.configure('Custom.Horizontal.TProgressbar',
+                background='#3fff8f',
+                troughcolor='#2f2f2f',
+                thickness=20,
+                troughrelief='sunken',
+                borderwidth=2,
+                relief='raised')
+
+        self.query = tk.StringVar(value='Search...')
+
+        self.root.grid_rowconfigure(0, weight=0)
+        self.root.grid_rowconfigure(1, weight=0)
+        self.root.grid_rowconfigure(2, weight=0)
+        self.root.grid_rowconfigure(3, weight=1)
+        self.root.grid_columnconfigure(0, weight=1)
+        self.root.grid_columnconfigure(1, weight=1)
+        self.root.grid_columnconfigure(2, weight=1)
+
+        self.input_frame = ttk.Frame(master=self.root)
+        self.input_frame.grid(row=0, column=0, padx=(10, 15), pady=(10, 0), columnspan=3, sticky='new')
+        self.input_frame.grid_rowconfigure(0, weight=1)
+        self.input_frame.grid_columnconfigure(0, weight=0)
+        self.input_frame.grid_columnconfigure(1, weight=1)
+        self.input_frame.grid_columnconfigure(2, weight=1)
+
+        self.select_input_dir = ttk.Button(master=self.input_frame, text="Select Input Folder", command=self.file_manager.refresh)
+        self.select_input_dir.grid(row=0, column=0, sticky='w', padx=5)
+        self.select_output_dir = ttk.Button(master=self.input_frame, text="Select Output Folder", command=self.set_output_dir)
+        self.select_output_dir.grid(row=0, column=1, sticky='w', padx=5)
+
+        self.search_field = ttk.Entry(master=self.input_frame, textvariable=self.query, font=("Helvetica", 12))
+        self.search_field.grid(row=0, column=2, sticky='ew')
+        self.search_field.bind('<KeyRelease>', self.search)
+        self.search_field.bind('<FocusIn>', self.on_entry_click)
+        self.search_field.bind('<FocusOut>', self.on_focusout)
+        self.search_field.config(foreground='grey')
+
+        self.tree_frame = ttk.Frame(master=self.root, padding=(10, 5))
+        self.tree_frame.grid(row=1, column=0, columnspan=3, sticky='new', padx=5, pady=5)
+        self.tree_frame.grid_rowconfigure(0, weight=1)
+        self.tree_frame.grid_columnconfigure(0, weight=1)
+
+        self.treeview = self.create_treeview(self.tree_frame)
+
+        self.progress_var = tk.DoubleVar()
+        self.progress_bar = ttk.Progressbar(master=self.tree_frame, style='Custom.Horizontal.TProgressbar', variable=self.progress_var, maximum=100)
+        self.progress_bar.grid(row=1, column=0, columnspan=2, padx=0, pady=(10,0), sticky="new")
+
+        self.game_frame = ttk.Frame(master=self.root, height=200)
+        self.game_frame.grid(row=2, column=0, columnspan=3, padx=14, pady=0, sticky='new')
+        self.game_frame.grid_propagate(False)
+        self.game_frame.grid_rowconfigure(0, weight=1)
+        self.game_frame.grid_columnconfigure(0, weight=0)
+        self.game_frame.grid_columnconfigure(1, weight=1)
+
+        self.image_label = ttk.Label(master=self.game_frame, width=200)
+        self.image_label.grid(row=0, column=0, sticky='new')
+        self.image_label.grid_propagate(False)
+
+        self.desc_frame = ttk.Frame(master=self.game_frame, padding=(10, 5))
+        self.desc_frame.grid(row=0, column=1, padx=0, pady=0, sticky='new')
+        self.desc_frame.grid_rowconfigure(0, weight=0)
+        self.desc_frame.grid_rowconfigure(1, weight=0)
+        self.desc_frame.grid_rowconfigure(2, weight=0)
+        self.desc_frame.grid_rowconfigure(3, weight=0)
+        self.desc_frame.grid_rowconfigure(4, weight=0)
+        self.desc_frame.grid_rowconfigure(5, weight=0)
+        self.desc_frame.grid_columnconfigure(0, weight=1)
+
+        self.game_name_label = ttk.Label(master=self.desc_frame, text="", font=("Helvetica", 16, "bold"))
+        self.game_name_label.grid(row=1, column=0, padx=5, pady=5, sticky='nw')
+
+        self.output_dir = None
+        self.transfer_button = ttk.Button(master=self.desc_frame, text="Transfer Game", state=tk.DISABLED)
+        self.transfer_button.grid(row=2, column=0, padx=5, pady=5, sticky='nw')
+
+        self.game_intro_label = ttk.Label(master=self.desc_frame, text="Intro", font=("Helvetica", 12), wraplength=540)
+        self.game_intro_label.grid(row=3, column=0, padx=5, pady=5, sticky='nw')
+
+        self.transfer_frame = ttk.Frame(master=self.root, padding=(10, 5))
+        self.transfer_frame.grid(row=3, column=0, columnspan=3, padx=5, pady=5, sticky='nsew')
+        self.transfer_frame.grid_propagate(False)
+        self.transfer_frame.grid_rowconfigure(0, weight=1)
+        self.transfer_frame.grid_columnconfigure(0, weight=1)
+
+        self.output_text = tk.Text(master=self.transfer_frame, bg="#2e2e2e", fg="#ffffff", insertbackground="white")
+        self.output_text.grid(row=0, column=0, sticky="nsew")
+
+    def create_treeview(self, frame: tk.Frame) -> ttk.Treeview:
+        treeview = ttk.Treeview(master=frame, columns=("titleid", "region"), selectmode='browse', height=4)
+        treeview.heading("#0", text="Game", anchor="w")
+        treeview.column("#0", stretch=tk.YES, minwidth=300, width=485)
+        treeview.heading("titleid", text="TitleID", anchor="w")
+        treeview.column("titleid", stretch=tk.YES, minwidth=100, width=150)
+        treeview.heading("region", text="Region", anchor="w")
+        treeview.column("region", stretch=tk.YES, minwidth=100, width=100)
+        treeview.grid(row=0, column=0, sticky='nsew')
+        vscroll = ttk.Scrollbar(master=frame, orient="vertical", command=treeview.yview)
+        treeview.configure(yscrollcommand=vscroll.set)
+        vscroll.grid(row=0, column=1, sticky='ns')
+        treeview.bind('<Button-1>', self.on_row_click)
+        treeview.bind('<MouseWheel>', self.on_treeview_scroll)
+        vscroll.bind('<ButtonRelease-1>', self.on_treeview_scroll)
+        treeview.bind('<KeyPress>', self.on_treeview_scroll)
+        return treeview
+    
+    def on_treeview_scroll(self, event: tk.Event) -> None:
+        if self.treeview.yview()[1] > 0.99:
+            self.file_manager.load_more_items()
+
+    def search(self, event: tk.Event) -> None:
+        self.file_manager.load_count = 0
+        self.treeview.yview_moveto(0)
+        if not self.search_field.get():
+            self.file_manager.populate_treeview()
+            return
+        self.file_manager.clear_treeview()
+        results = process.extract(self.search_field.get(), self.file_manager.choices, limit=100, scorer=fuzz.partial_token_sort_ratio)
+        for result in results:
+            id = result[2]
+            self.treeview.insert("", tk.END, text=self.file_manager.files[id]['name'], values=(self.file_manager.files[id]['id'], self.file_manager.files[id]['region']))
+
+    def set_output_dir(self) -> None:
+        directory = filedialog.askdirectory()
+        if directory:
+            self.output_dir = directory
+            self.enable_transfer_button()
+
+    def enable_transfer_button(self) -> None:
+        if self.output_dir:
+            self.transfer_button.config(state=tk.NORMAL)
+
+    def on_row_click(self, event: tk.Event) -> None:
+        if self.transfer_in_progress:
+            return
+        global current_game
+        row_id = event.widget.identify_row(event.y)
+        if row_id:
+            item = event.widget.item(row_id, 'values')
+            key = item[0][:-3]
+
+            current_game = self.file_manager.files[key]
+
+            self.game_name_label.config(text=current_game['name'])
+            self.game_intro_label.config(text=current_game['intro'] or "")
+
+            self.transfer_button.bind('<Button-1>', lambda e: self.start_process(current_game))
+            self.enable_transfer_button()
+
+            icon_url = current_game.get('iconUrl', os.path.join(script_dir, "images", "no.jpg"))
+            self.image_manager.start_fetch_thread(icon_url, row_id, self.image_label)
+
+    def update_transfer_ui(self, text: Optional[str] = None, progress: Optional[int] = None, info: Optional[str] = None, filename: Optional[str] = None) -> None:
+        if text:
+            self.output_text.insert(tk.END, text)
+            self.output_text.see(tk.END)
+        if progress is not None:
+            self.progress_var.set(progress)
+
+    def read_stream(self, stream: subprocess.PIPE) -> None:
+        has_progress_data = False
+        for line in stream:
+            self.update_transfer_ui(text=line)
+            if not has_progress_data and re.search(r'(\d+)%\|', line):
+                self.progress_bar.config(mode='determinate')
+                has_progress_data = True
+            self.parse_line(line)
+
+    def parse_line(self, line: str) -> None:
+        progress_match = re.search(r'(\d+)%\|', line)
+        if progress_match:
+            self.update_transfer_ui(progress=int(progress_match.group(1)))
+
+    def decompress_and_create_xci(self) -> None:
+        squirrel_exe_path = os.path.join(script_dir, "tools", "squirrel.exe")
+        working_directory = os.path.join(script_dir, "tools")
+
+        if not all(os.path.exists(path) for path in [squirrel_exe_path, working_directory]):
+            self.update_transfer_ui(text="Executable or working directory not found\n")
+            self.enable_transfer_button()
+            return
+
+        command = [
+            squirrel_exe_path, "-b", "65536", "-pv", "0", "-kp", "False", "0",
+            "-fat", "exfat", "-fx", "files", "-ND", "True", "-t", "xci", "-o", self.output_dir,
+            "-tfile", self.mlist_file_path, "-roma", "True", "-dmul", "calculate"
+        ]
+
+        try:
+            self.process = subprocess.Popen(command, cwd=working_directory, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8', bufsize=1, universal_newlines=True)
+            stdout_thread = threading.Thread(target=self.read_stream, args=(self.process.stdout,))
+            stderr_thread = threading.Thread(target=self.read_stream, args=(self.process.stderr,))
+
+            stdout_thread.start()
+            stderr_thread.start()
+
+            stdout_thread.join()
+            stderr_thread.join()
+
+            self.process.stdout.close()
+            self.process.stderr.close()
+            self.process.wait()
+        except FileNotFoundError as e:
+            self.update_transfer_ui(text=f"FileNotFoundError: {e}\n")
+        except Exception as e:
+            self.update_transfer_ui(text=f"An error occurred: {e}\n")
+        finally:
+            self.progress_var.set(0)
+            self.progress_bar.stop()
+            self.enable_transfer_button()
+            self.cleanup_mlist()
+            self.transfer_in_progress = False
+
+    def cleanup_mlist(self) -> None:
+        if os.path.exists(self.mlist_file_path):
+            try:
+                os.remove(self.mlist_file_path)
+            except OSError as e:
+                self.update_transfer_ui(text=f"Error deleting mlist.txt: {e}\n")
+
+    def start_process(self, game: Dict) -> None:
+        self.transfer_in_progress = True
+        if not self.output_dir:
+            self.update_transfer_ui(text=f"Output directory is not set.\n")
+            return
+        self.create_files_list(game)
+        self.output_text.delete('1.0', tk.END)
+        self.progress_var.set(0)
+        self.disable_transfer_button()
+        threading.Thread(target=self.decompress_and_create_xci).start()
+
+    def create_files_list(self, game: Dict) -> None:
+        game_files = game['base'] + game['update'] + game['dlc']
+        with open(self.mlist_file_path, 'w', encoding='utf-8') as f:
+            for file_path in game_files:
+                f.write(file_path + '\n')
+
+    def disable_transfer_button(self) -> None:
+        self.transfer_button.bind('<Button-1>', lambda e: None)
+        self.transfer_button.config(state=tk.DISABLED)
+
+    def enable_transfer_button(self) -> None:
+        self.transfer_button.bind('<Button-1>', lambda e: self.start_process(current_game))
+        self.transfer_button.config(state=tk.NORMAL)
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = GameManager(root)
+    root.mainloop()
