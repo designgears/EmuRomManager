@@ -1,4 +1,5 @@
 import os
+import sys
 import re
 import json
 import hashlib
@@ -15,10 +16,14 @@ import subprocess
 from typing import Dict, List, Optional
 from ttkbootstrap import Style
 
-NSZ_PATTERN = re.compile(r"(?P<name>.*)\[(?:(?P<titleid>[A-Za-z0-9]{16}).*|\[(?P<region>[A-Z]{2})\].*|\[v(?P<version>\d{1,})\].*){2}(?:\.nsz|\.nsp)")
+static_dir = os.path.dirname(os.path.abspath(__file__))
+if getattr(sys, 'frozen', False):
+    script_dir = os.path.dirname(sys.executable)
+else:
+    script_dir = os.path.dirname(os.path.abspath(__file__))
 
+NSZ_PATTERN = re.compile(r"(?P<name>.*)\[(?:(?P<titleid>[A-Za-z0-9]{16}).*|\[(?P<region>[A-Z]{2})\].*|\[v(?P<version>\d{1,})\].*){2}(?:\.nsz|\.nsp)")
 current_game = None
-script_dir = os.path.dirname(os.path.abspath(__file__))
 
 class FileManager:
     def __init__(self, game_manager=None, image_manager=None) -> None:
@@ -177,8 +182,8 @@ class ImageManager:
         self.current_item: Optional[str] = None
         self.cache_dir: str = os.path.join(script_dir, "image_cache")
         os.makedirs(self.cache_dir, exist_ok=True)
-        self.default_image_path: str = os.path.join(script_dir, "images", "no_image.png")
-        self.transparent_image_path: str = os.path.join(script_dir, "images", "loading.png")
+        self.default_image_path: str = os.path.join(static_dir, "images", "no_image.png")
+        self.transparent_image_path: str = os.path.join(static_dir, "images", "loading.png")
         self.game_manager = game_manager
         self.file_manager = file_manager
 
