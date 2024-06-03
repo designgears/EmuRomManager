@@ -4,3 +4,5 @@ image_cache
 titledb
 result.json
 test.py
+keys.txt
+prod.keys
