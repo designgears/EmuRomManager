@@ -462,8 +462,8 @@ class GameManager:
             self.update_transfer_ui(progress=int(progress_match.group(1)))
 
     def decompress_and_create_xci(self) -> None:
-        squirrel_exe_path = os.path.join(script_dir, "tools", "squirrel.exe")
-        working_directory = os.path.join(script_dir, "tools")
+        squirrel_exe_path = os.path.join(static_dir, "tools", "squirrel.exe")
+        working_directory = os.path.join(static_dir, "tools")
 
         if not all(os.path.exists(path) for path in [squirrel_exe_path, working_directory]):
             self.update_transfer_ui(text="Executable or working directory not found\n")
