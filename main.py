@@ -5,7 +5,6 @@ import json
 import hashlib
 import threading
 import queue
-from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog
 from PIL import Image, ImageTk
@@ -13,7 +12,7 @@ import requests
 from io import BytesIO
 from thefuzz import fuzz, process
 import subprocess
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 from ttkbootstrap import Style
 
 static_dir = os.path.dirname(os.path.abspath(__file__))
@@ -131,7 +130,7 @@ class FileManager:
                     data = json.load(file)
                     for title in data:
                         title_data = data[title]
-                        if title_data['id'] and title_data['nsuId']:
+                        if title_data['id']:
                             key = title_data['id'][:-3]
                             if self.type_check(title_data['id'][-3:]) == "base" and key in self.files:
                                 self.choices[key] = f"{title_data['name']} {title_data['id']}"
