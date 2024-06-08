@@ -17,6 +17,7 @@ import subprocess
 from typing import Dict, Optional
 from ttkbootstrap import Style
 
+
 static_dir = os.path.dirname(os.path.abspath(__file__))
 script_dir = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
 
