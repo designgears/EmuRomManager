@@ -5,6 +5,7 @@ import json
 import hashlib
 import threading
 import queue
+import time
 import psutil
 import tkinter as tk
 from tkinter import ttk, filedialog
@@ -17,13 +18,9 @@ from typing import Dict, Optional
 from ttkbootstrap import Style
 
 static_dir = os.path.dirname(os.path.abspath(__file__))
-if getattr(sys, 'frozen', False):
-    script_dir = os.path.dirname(sys.executable)
-else:
-    script_dir = os.path.dirname(os.path.abspath(__file__))
+script_dir = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
 
 NSZ_PATTERN = re.compile(r"(?P<name>.*)\[(?:(?P<titleid>[A-Za-z0-9]{16}).*|\[(?P<region>[A-Z]{2})\].*|\[v(?P<version>\d{1,})\].*){2}(?:\.nsz|\.nsp)")
-current_game = None
 
 class FileManager:
     def __init__(self, game_manager=None, image_manager=None) -> None:
@@ -42,8 +39,7 @@ class FileManager:
         try:
             if os.path.exists(filepath):
                 with open(filepath, 'r') as file:
-                    data = json.load(file)
-                    self.files = data
+                    self.files = json.load(file)
                     self.load_count = 0
                     self.populate_treeview()
                     self.update_choices()
@@ -57,10 +53,10 @@ class FileManager:
 
     def sort_files_by_rank(self) -> None:
         sorted_keys = sorted(self.files, key=lambda x: self.files[x].get('rank', 999999))
-        sorted_files = {key: self.files[key] for key in sorted_keys}
-        self.files = sorted_files
+        self.files = {key: self.files[key] for key in sorted_keys}
 
-    def type_check(self, check_digit: str) -> str:
+    @staticmethod
+    def type_check(check_digit: str) -> str:
         type_mapping = {"000": "base", "800": "update"}
         return type_mapping.get(check_digit, "dlc")
 
@@ -75,7 +71,7 @@ class FileManager:
             print(f"Failed to download titles.json: {e}")
             return False
 
-    def scan_files(seld, directory, pattern):
+    def scan_files(self, directory, pattern):
         scanned_files = []
         stack = [directory]
         while stack:
@@ -106,10 +102,7 @@ class FileManager:
             titleid = match.group('titleid')
             if titleid:
                 file_type = self.type_check(titleid[-3:])
-                if file_type == 'dlc':
-                    key = f"{int(titleid, 16)-0x1000:0{16}X}"[:-3]
-                else:
-                    key = titleid[:-3]
+                key = f"{int(titleid, 16)-0x1000:0{16}X}"[:-3] if file_type == 'dlc' else titleid[:-3]
                 if key not in self.files:
                     self.files[key] = {
                         'name': match.group('name').strip() or None,
@@ -262,72 +255,11 @@ class GameManager:
         self.transfer_in_progress = False
         self.process = None
         self.current_filename = None
-
-    def cancel_transfer(self) -> None:
-        if self.process and self.transfer_in_progress:
-            self.terminate_process_tree(self.process.pid)
-            self.update_transfer_ui(text="Transfer canceled by user.\n")
-            self.cleanup_mlist()
-            self.delete_output_files()
-            self.transfer_in_progress = False
-            self.progress_var.set(0)
-            self.progress_bar.stop()
-            self.enable_transfer_button()
-            self.disable_cancel_button()
-
-    def terminate_process_tree(self, pid: int) -> None:
-        try:
-            parent = psutil.Process(pid)
-            for child in parent.children(recursive=True):
-                child.kill()
-            parent.kill()
-            parent.wait(5)
-        except psutil.NoSuchProcess:
-            pass
-
-    def disable_cancel_button(self) -> None:
-        self.cancel_button.config(state=tk.DISABLED)
-
-    def enable_cancel_button(self) -> None:
-        self.cancel_button.config(state=tk.NORMAL)
-
-    def delete_output_files(self) -> None:
-        if self.current_filename:
-            file_path = os.path.join(self.output_dir, self.current_filename)
-            try:
-                if os.path.isfile(file_path):
-                    os.remove(file_path)
-                    self.update_transfer_ui(text=f"Deleted file: {file_path}\n")
-            except Exception as e:
-                self.update_transfer_ui(text=f"Error deleting file {file_path}: {e}\n")
-        else:
-            self.update_transfer_ui(text="No file to delete\n")
-
-    def start_process(self, game: Dict) -> None:
-        self.transfer_in_progress = True
-        if not self.output_dir:
-            self.update_transfer_ui(text=f"Output directory is not set.\n")
-            return
-        self.create_files_list(game)
-        self.output_text.delete('1.0', tk.END)
-        self.progress_var.set(0)
-        self.disable_transfer_button()
-        self.enable_cancel_button()
-        threading.Thread(target=self.decompress_and_create_xci).start()
-
-    def on_entry_click(self, event: tk.Event) -> None:
-        if self.search_field.get() == 'Search...':
-            self.search_field.delete(0, "end")
-            self.search_field.insert(0, '')
-            self.search_field.config(foreground='white')
-
-    def on_focusout(self, event: tk.Event) -> None:
-        if self.search_field.get() == '':
-            self.search_field.insert(0, 'Search...')
-            self.search_field.config(foreground='grey')
+        self.output_dir = None
 
     def setup_ui(self) -> None:
         self.root.geometry("800x600")
+        self.root.eval('tk::PlaceWindow . center')
         self.root.resizable(False, False)
         self.root.title("EmuRomManager")
 
@@ -409,11 +341,9 @@ class GameManager:
         self.desc_frame.grid_columnconfigure(0, weight=0)
         self.desc_frame.grid_columnconfigure(1, weight=1)
         
-
         self.game_name_label = ttk.Label(master=self.desc_frame, text="", font=("Helvetica", 16, "bold"))
         self.game_name_label.grid(row=0, column=0, columnspan=3, padx=5, pady=5, sticky='nw')
 
-        self.output_dir = None
         self.transfer_button = ttk.Button(master=self.desc_frame, text="Transfer Game", state=tk.DISABLED)
         self.transfer_button.grid(row=1, column=0, padx=5, pady=5, sticky='nw')
 
@@ -466,16 +396,6 @@ class GameManager:
             id = result[2]
             self.treeview.insert("", tk.END, text=self.file_manager.files[id]['name'], values=(self.file_manager.files[id]['id'], self.file_manager.files[id]['region']))
 
-    def set_output_dir(self) -> None:
-        directory = filedialog.askdirectory()
-        if directory:
-            self.output_dir = directory
-            self.enable_transfer_button()
-
-    def enable_transfer_button(self) -> None:
-        if self.output_dir:
-            self.transfer_button.config(state=tk.NORMAL)
-
     def on_row_click(self, event: tk.Event) -> None:
         if self.transfer_in_progress:
             return
@@ -490,7 +410,7 @@ class GameManager:
             self.game_name_label.config(text=current_game['name'])
             self.game_intro_label.config(text=current_game['intro'] or "")
 
-            self.transfer_button.bind('<Button-1>', lambda e: self.start_process(current_game))
+            
             self.enable_transfer_button()
 
             icon_url = current_game.get('iconUrl', os.path.join(script_dir, "images", "no.jpg"))
@@ -522,6 +442,18 @@ class GameManager:
         if filename_match:
             self.current_filename = filename_match.group(1).strip()
             self.update_transfer_ui(text=f"Processing file: {self.current_filename}\n")
+
+    def start_process(self, game: Dict) -> None:
+        self.transfer_in_progress = True
+        if not self.output_dir:
+            self.update_transfer_ui(text=f"Output directory is not set.\n")
+            return
+        self.create_files_list(game)
+        self.output_text.delete('1.0', tk.END)
+        self.progress_var.set(0)
+        self.disable_transfer_button()
+        self.enable_cancel_button()
+        threading.Thread(target=self.decompress_and_create_xci).start()
 
     def decompress_and_create_xci(self) -> None:
         squirrel_exe_path = os.path.join(static_dir, "tools", "Squirrel.exe")
@@ -556,6 +488,7 @@ class GameManager:
             self.update_transfer_ui(text=f"FileNotFoundError: {e}\n")
         except Exception as e:
             self.update_transfer_ui(text=f"An error occurred: {e}\n")
+            self.delete_output_files()
         finally:
             self.progress_var.set(0)
             self.progress_bar.stop()
@@ -564,6 +497,28 @@ class GameManager:
             self.cleanup_mlist()
             self.transfer_in_progress = False
 
+    def cancel_transfer(self) -> None:
+        if self.process and self.transfer_in_progress:
+            self.terminate_process_tree(self.process.pid)
+            self.update_transfer_ui(text="Transfer canceled by user.\n")
+            self.cleanup_mlist()
+            self.delete_output_files()
+            self.transfer_in_progress = False
+            self.progress_var.set(0)
+            self.progress_bar.stop()
+            self.enable_transfer_button()
+            self.disable_cancel_button()
+
+    def terminate_process_tree(self, pid: int) -> None:
+        try:
+            parent = psutil.Process(pid)
+            for child in parent.children(recursive=True):
+                child.kill()
+            parent.kill()
+            parent.wait(5)
+        except psutil.NoSuchProcess:
+            pass
+
     def cleanup_mlist(self) -> None:
         if os.path.exists(self.mlist_file_path):
             try:
@@ -571,18 +526,24 @@ class GameManager:
             except OSError as e:
                 self.update_transfer_ui(text=f"Error deleting mlist.txt: {e}\n")
 
-    def start_process(self, game: Dict) -> None:
-        self.transfer_in_progress = True
-        if not self.output_dir:
-            self.update_transfer_ui(text=f"Output directory is not set.\n")
-            return
-        self.create_files_list(game)
-        self.output_text.delete('1.0', tk.END)
-        self.progress_var.set(0)
-        self.disable_transfer_button()
-        self.enable_cancel_button()
-        threading.Thread(target=self.decompress_and_create_xci).start()
-
+    def delete_output_files(self) -> None:
+        if self.current_filename:
+            file_path = os.path.join(self.output_dir, self.current_filename)
+            max_retries = 5
+            for attempt in range(max_retries):
+                try:
+                    if os.path.isfile(file_path):
+                        os.remove(file_path)
+                        self.update_transfer_ui(text=f"Deleted file: {file_path}\n")
+                    break
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        self.update_transfer_ui(text=f"Retrying to delete file: {file_path}. Attempt {attempt + 1}\n")
+                        time.sleep(1)
+                    else:
+                        self.update_transfer_ui(text=f"Error deleting file {file_path}: {e}\n")
+        else:
+            self.update_transfer_ui(text="No file to delete\n")
 
     def create_files_list(self, game: Dict) -> None:
         game_files = game['base'] + game['update'] + game['dlc']
@@ -597,6 +558,29 @@ class GameManager:
     def enable_transfer_button(self) -> None:
         self.transfer_button.bind('<Button-1>', lambda e: self.start_process(current_game))
         self.transfer_button.config(state=tk.NORMAL)
+
+    def set_output_dir(self) -> None:
+        directory = filedialog.askdirectory()
+        if directory:
+            self.output_dir = directory
+            self.enable_transfer_button()
+
+    def on_entry_click(self, event: tk.Event) -> None:
+        if self.search_field.get() == 'Search...':
+            self.search_field.delete(0, "end")
+            self.search_field.insert(0, '')
+            self.search_field.config(foreground='white')
+
+    def on_focusout(self, event: tk.Event) -> None:
+        if self.search_field.get() == '':
+            self.search_field.insert(0, 'Search...')
+            self.search_field.config(foreground='grey')
+
+    def disable_cancel_button(self) -> None:
+        self.cancel_button.config(state=tk.DISABLED)
+
+    def enable_cancel_button(self) -> None:
+        self.cancel_button.config(state=tk.NORMAL)
 
 if __name__ == "__main__":
     root = tk.Tk()
