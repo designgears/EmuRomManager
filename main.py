@@ -261,12 +261,14 @@ class GameManager:
         self.cleanup_mlist()
         self.transfer_in_progress = False
         self.process = None
+        self.current_filename = None
 
     def cancel_transfer(self) -> None:
         if self.process and self.transfer_in_progress:
             self.terminate_process_tree(self.process.pid)
             self.update_transfer_ui(text="Transfer canceled by user.\n")
             self.cleanup_mlist()
+            self.delete_output_files()
             self.transfer_in_progress = False
             self.progress_var.set(0)
             self.progress_bar.stop()
@@ -279,6 +281,7 @@ class GameManager:
             for child in parent.children(recursive=True):
                 child.kill()
             parent.kill()
+            parent.wait(5)
         except psutil.NoSuchProcess:
             pass
 
@@ -287,6 +290,18 @@ class GameManager:
 
     def enable_cancel_button(self) -> None:
         self.cancel_button.config(state=tk.NORMAL)
+
+    def delete_output_files(self) -> None:
+        if self.current_filename:
+            file_path = os.path.join(self.output_dir, self.current_filename)
+            try:
+                if os.path.isfile(file_path):
+                    os.remove(file_path)
+                    self.update_transfer_ui(text=f"Deleted file: {file_path}\n")
+            except Exception as e:
+                self.update_transfer_ui(text=f"Error deleting file {file_path}: {e}\n")
+        else:
+            self.update_transfer_ui(text="No file to delete\n")
 
     def start_process(self, game: Dict) -> None:
         self.transfer_in_progress = True
@@ -499,8 +514,14 @@ class GameManager:
 
     def parse_line(self, line: str) -> None:
         progress_match = re.search(r'(\d+)%\|', line)
+        filename_match = re.search(r'Filename: (.+\.xci)', line)
+
         if progress_match:
             self.update_transfer_ui(progress=int(progress_match.group(1)))
+
+        if filename_match:
+            self.current_filename = filename_match.group(1).strip()
+            self.update_transfer_ui(text=f"Processing file: {self.current_filename}\n")
 
     def decompress_and_create_xci(self) -> None:
         squirrel_exe_path = os.path.join(static_dir, "tools", "Squirrel.exe")
