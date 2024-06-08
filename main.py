@@ -5,6 +5,7 @@ import json
 import hashlib
 import threading
 import queue
+import psutil
 import tkinter as tk
 from tkinter import ttk, filedialog
 from PIL import Image, ImageTk
@@ -259,6 +260,45 @@ class GameManager:
         self.mlist_file_path = os.path.join(script_dir, "mlist.txt")
         self.cleanup_mlist()
         self.transfer_in_progress = False
+        self.process = None
+
+    def cancel_transfer(self) -> None:
+        if self.process and self.transfer_in_progress:
+            self.terminate_process_tree(self.process.pid)
+            self.update_transfer_ui(text="Transfer canceled by user.\n")
+            self.cleanup_mlist()
+            self.transfer_in_progress = False
+            self.progress_var.set(0)
+            self.progress_bar.stop()
+            self.enable_transfer_button()
+            self.disable_cancel_button()
+
+    def terminate_process_tree(self, pid: int) -> None:
+        try:
+            parent = psutil.Process(pid)
+            for child in parent.children(recursive=True):
+                child.kill()
+            parent.kill()
+        except psutil.NoSuchProcess:
+            pass
+
+    def disable_cancel_button(self) -> None:
+        self.cancel_button.config(state=tk.DISABLED)
+
+    def enable_cancel_button(self) -> None:
+        self.cancel_button.config(state=tk.NORMAL)
+
+    def start_process(self, game: Dict) -> None:
+        self.transfer_in_progress = True
+        if not self.output_dir:
+            self.update_transfer_ui(text=f"Output directory is not set.\n")
+            return
+        self.create_files_list(game)
+        self.output_text.delete('1.0', tk.END)
+        self.progress_var.set(0)
+        self.disable_transfer_button()
+        self.enable_cancel_button()
+        threading.Thread(target=self.decompress_and_create_xci).start()
 
     def on_entry_click(self, event: tk.Event) -> None:
         if self.search_field.get() == 'Search...':
@@ -351,20 +391,22 @@ class GameManager:
         self.desc_frame.grid_rowconfigure(0, weight=0)
         self.desc_frame.grid_rowconfigure(1, weight=0)
         self.desc_frame.grid_rowconfigure(2, weight=0)
-        self.desc_frame.grid_rowconfigure(3, weight=0)
-        self.desc_frame.grid_rowconfigure(4, weight=0)
-        self.desc_frame.grid_rowconfigure(5, weight=0)
-        self.desc_frame.grid_columnconfigure(0, weight=1)
+        self.desc_frame.grid_columnconfigure(0, weight=0)
+        self.desc_frame.grid_columnconfigure(1, weight=1)
+        
 
         self.game_name_label = ttk.Label(master=self.desc_frame, text="", font=("Helvetica", 16, "bold"))
-        self.game_name_label.grid(row=1, column=0, padx=5, pady=5, sticky='nw')
+        self.game_name_label.grid(row=0, column=0, columnspan=3, padx=5, pady=5, sticky='nw')
 
         self.output_dir = None
         self.transfer_button = ttk.Button(master=self.desc_frame, text="Transfer Game", state=tk.DISABLED)
-        self.transfer_button.grid(row=2, column=0, padx=5, pady=5, sticky='nw')
+        self.transfer_button.grid(row=1, column=0, padx=5, pady=5, sticky='nw')
+
+        self.cancel_button = ttk.Button(master=self.desc_frame, text="Cancel Transfer", state=tk.DISABLED, command=self.cancel_transfer)
+        self.cancel_button.grid(row=1, column=1, padx=5, pady=5, sticky='nw')
 
         self.game_intro_label = ttk.Label(master=self.desc_frame, text="Intro", font=("Helvetica", 12), wraplength=540)
-        self.game_intro_label.grid(row=3, column=0, padx=5, pady=5, sticky='nw')
+        self.game_intro_label.grid(row=2, column=0, columnspan=3, padx=5, pady=5, sticky='nw')
 
         self.transfer_frame = ttk.Frame(master=self.root, padding=(10, 5))
         self.transfer_frame.grid(row=3, column=0, columnspan=3, padx=5, pady=5, sticky='nsew')
@@ -461,7 +503,7 @@ class GameManager:
             self.update_transfer_ui(progress=int(progress_match.group(1)))
 
     def decompress_and_create_xci(self) -> None:
-        squirrel_exe_path = os.path.join(static_dir, "tools", "squirrel.exe")
+        squirrel_exe_path = os.path.join(static_dir, "tools", "Squirrel.exe")
         working_directory = os.path.join(static_dir, "tools")
 
         if not all(os.path.exists(path) for path in [squirrel_exe_path, working_directory]):
@@ -472,7 +514,7 @@ class GameManager:
         command = [
             squirrel_exe_path, "-b", "65536", "-pv", "0", "-kp", "False", "0",
             "-fat", "exfat", "-fx", "files", "-ND", "True", "-t", "xci", "-o", self.output_dir,
-            "-tfile", self.mlist_file_path, "-roma", "True", "-dmul", "calculate"
+            "-tfile", self.mlist_file_path, "-roma", "True", "-dmul", "calculate", "-threads", "4", "-pararell", "4"
         ]
 
         try:
@@ -497,6 +539,7 @@ class GameManager:
             self.progress_var.set(0)
             self.progress_bar.stop()
             self.enable_transfer_button()
+            self.disable_cancel_button()
             self.cleanup_mlist()
             self.transfer_in_progress = False
 
@@ -516,7 +559,9 @@ class GameManager:
         self.output_text.delete('1.0', tk.END)
         self.progress_var.set(0)
         self.disable_transfer_button()
+        self.enable_cancel_button()
         threading.Thread(target=self.decompress_and_create_xci).start()
+
 
     def create_files_list(self, game: Dict) -> None:
         game_files = game['base'] + game['update'] + game['dlc']
