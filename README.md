@@ -2,9 +2,10 @@ This project was inspired by my 9yr old son who constantly wants to try differen
 
 It's messy, one day I will clean it up, but for now it gets the job done. :shipit:
 
-This is used in conjuction with (none of this is require, just my use case) EmuDeck and Playnite (w/the EmuDeck addon). The resulting XCI is copied to the switch roms directory, then scanned on startup by Playnite and ready to play in most cases. Some games need settings tweaks in the emulator or mods to work correctly, that isn't covered here.
+> [!Note]
+> This is used in conjuction with (none of this is require, just my use case) EmuDeck and Playnite (w/the EmuDeck addon). The resulting XCI is copied to the switch roms directory, then scanned on startup by Playnite and ready to play in most cases. Some games need settings tweaks in the emulator or mods to work correctly, that isn't covered here.
 
-> [!NOTE]
+> [!IMPORTANT]
 > Directory structure doesn't matter, base/update/dlc are determined from the titleid. I don't want to process the file to get the information, with a large collection, over the network, that gets very slow. (very specific to my use case)
 
 > [!IMPORTANT]
