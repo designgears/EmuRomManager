@@ -8,7 +8,7 @@ It's messy, one day I will clean it up, but for now it gets the job done. :shipi
 > [!IMPORTANT]
 > Directory structure doesn't matter, base/update/dlc are determined from the titleid. I don't want to process the file to get the information, with a large collection, over the network, that gets very slow. (very specific to my use case)
 
-> [!IMPORTANT]
+> [!WARNING]
 > Filename matters, at a minimum you need `[<16 digit titleid>][<version>].(nsp|nsz|xci)`, the order of the version and titleid doesn't matter.
 
 ### Example Filenames: 
