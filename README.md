@@ -22,9 +22,6 @@ It's messy, one day I will clean it up, but for now it gets the job done. :shipi
 ...
 ```
 
-> [!CAUTION]
-> Games with large amounts of DLC take a considerable amount of time to process when using NSZ/XCZ, each file takes around 12 seconds to process, even when being read locally. This is a limitation of Squirrel/NCA when dealing with compression, I'm looking for alternatives or fixes that could speed it up.
-
 ## Screenshots: 
 ![image](https://github.com/designgears/EmuRomManager/assets/799451/04dea1bc-1297-436d-b989-adfd920f6976)
 ![image](https://github.com/designgears/EmuRomManager/assets/799451/dc8ddaf5-2efa-4729-8fb5-1b176e2ed4a7)
