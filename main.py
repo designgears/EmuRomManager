@@ -6,17 +6,17 @@ import hashlib
 import threading
 import queue
 import time
-import psutil
 import tkinter as tk
 from tkinter import ttk, filedialog
 from PIL import Image, ImageTk
 import requests
 from io import BytesIO
 from thefuzz import fuzz, process
-import subprocess
 from typing import Dict, Optional
 from ttkbootstrap import Style
 
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ACORN'))
+from acorn import create_multi_xci
 
 static_dir = os.path.dirname(os.path.abspath(__file__))
 script_dir = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
@@ -56,8 +56,7 @@ class FileManager:
         sorted_keys = sorted(self.files, key=lambda x: self.files[x].get('rank', 999999))
         self.files = {key: self.files[key] for key in sorted_keys}
 
-    @staticmethod
-    def type_check(check_digit: str) -> str:
+    def type_check(self, check_digit: str) -> str:
         type_mapping = {"000": "base", "800": "update"}
         return type_mapping.get(check_digit, "dlc")
 
@@ -251,8 +250,6 @@ class GameManager:
         self.setup_ui()
         self.file_manager.load_data(os.path.join(script_dir, "result.json"))
         self.image_manager.check_queue(self.image_label)
-        self.mlist_file_path = os.path.join(script_dir, "mlist.txt")
-        self.cleanup_mlist()
         self.transfer_in_progress = False
         self.process = None
         self.current_filename = None
@@ -410,7 +407,6 @@ class GameManager:
 
             self.game_name_label.config(text=current_game['name'])
             self.game_intro_label.config(text=current_game['intro'] or "")
-
             
             self.enable_transfer_button()
 
@@ -421,35 +417,17 @@ class GameManager:
         if text:
             self.output_text.insert(tk.END, text)
             self.output_text.see(tk.END)
+            self.root.update_idletasks()  # Force immediate GUI update for real-time output
         if progress is not None:
             self.progress_var.set(progress)
-
-    def read_stream(self, stream: subprocess.PIPE) -> None:
-        has_progress_data = False
-        for line in stream:
-            self.update_transfer_ui(text=line)
-            if not has_progress_data and re.search(r'(\d+)%\|', line):
-                self.progress_bar.config(mode='determinate')
-                has_progress_data = True
-            self.parse_line(line)
-
-    def parse_line(self, line: str) -> None:
-        progress_match = re.search(r'(\d+)%\|', line)
-        filename_match = re.search(r'Filename: (.+\.xci)', line)
-
-        if progress_match:
-            self.update_transfer_ui(progress=int(progress_match.group(1)))
-
-        if filename_match:
-            self.current_filename = filename_match.group(1).strip()
-            self.update_transfer_ui(text=f"Processing file: {self.current_filename}\n")
+            self.root.update_idletasks()  # Force immediate progress update
 
     def start_process(self, game: Dict) -> None:
         self.transfer_in_progress = True
         if not self.output_dir:
             self.update_transfer_ui(text=f"Output directory is not set.\n")
             return
-        self.create_files_list(game)
+        self.current_game_files = game['base'] + game['update'] + game['dlc']
         self.output_text.delete('1.0', tk.END)
         self.progress_var.set(0)
         self.disable_transfer_button()
@@ -457,36 +435,23 @@ class GameManager:
         threading.Thread(target=self.decompress_and_create_xci).start()
 
     def decompress_and_create_xci(self) -> None:
-        squirrel_exe_path = os.path.join(static_dir, "tools", "Squirrel.exe")
-        working_directory = os.path.join(static_dir, "tools")
-
-        if not all(os.path.exists(path) for path in [squirrel_exe_path, working_directory]):
-            self.update_transfer_ui(text="Executable or working directory not found\n")
-            self.enable_transfer_button()
-            return
-
-        command = [
-            squirrel_exe_path, "-b", "65536", "-pv", "0", "-kp", "False", "0",
-            "-fat", "exfat", "-fx", "files", "-ND", "True", "-t", "xci", "-o", self.output_dir,
-            "-tfile", self.mlist_file_path, "-roma", "True", "-dmul", "calculate", "-threads", "4", "-pararell", "4"
-        ]
-
         try:
-            self.process = subprocess.Popen(command, cwd=working_directory, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8', bufsize=1, universal_newlines=True)
-            stdout_thread = threading.Thread(target=self.read_stream, args=(self.process.stdout,))
-            stderr_thread = threading.Thread(target=self.read_stream, args=(self.process.stderr,))
-
-            stdout_thread.start()
-            stderr_thread.start()
-
-            stdout_thread.join()
-            stderr_thread.join()
-
-            self.process.stdout.close()
-            self.process.stderr.close()
-            self.process.wait()
-        except FileNotFoundError as e:
-            self.update_transfer_ui(text=f"FileNotFoundError: {e}\n")
+            self.update_transfer_ui(text="Starting XCI creation with ACORN...\n")
+            
+            result = create_multi_xci(
+                files=self.current_game_files,
+                output_folder=self.output_dir,
+                text_file=None,
+                buffer_size=65536,
+                progress_callback=lambda msg: self.update_transfer_ui(text=msg)
+            )
+            
+            if result == 0:
+                self.update_transfer_ui(text="XCI creation completed successfully!\n")
+                self.progress_var.set(100)
+            else:
+                self.update_transfer_ui(text="XCI creation failed.\n")
+                
         except Exception as e:
             self.update_transfer_ui(text=f"An error occurred: {e}\n")
             self.delete_output_files()
@@ -495,37 +460,17 @@ class GameManager:
             self.progress_bar.stop()
             self.enable_transfer_button()
             self.disable_cancel_button()
-            self.cleanup_mlist()
             self.transfer_in_progress = False
 
     def cancel_transfer(self) -> None:
-        if self.process and self.transfer_in_progress:
-            self.terminate_process_tree(self.process.pid)
+        if self.transfer_in_progress:
             self.update_transfer_ui(text="Transfer canceled by user.\n")
-            self.cleanup_mlist()
             self.delete_output_files()
             self.transfer_in_progress = False
             self.progress_var.set(0)
             self.progress_bar.stop()
             self.enable_transfer_button()
             self.disable_cancel_button()
-
-    def terminate_process_tree(self, pid: int) -> None:
-        try:
-            parent = psutil.Process(pid)
-            for child in parent.children(recursive=True):
-                child.kill()
-            parent.kill()
-            parent.wait(5)
-        except psutil.NoSuchProcess:
-            pass
-
-    def cleanup_mlist(self) -> None:
-        if os.path.exists(self.mlist_file_path):
-            try:
-                os.remove(self.mlist_file_path)
-            except OSError as e:
-                self.update_transfer_ui(text=f"Error deleting mlist.txt: {e}\n")
 
     def delete_output_files(self) -> None:
         if self.current_filename:
@@ -545,12 +490,6 @@ class GameManager:
                         self.update_transfer_ui(text=f"Error deleting file {file_path}: {e}\n")
         else:
             self.update_transfer_ui(text="No file to delete\n")
-
-    def create_files_list(self, game: Dict) -> None:
-        game_files = game['base'] + game['update'] + game['dlc']
-        with open(self.mlist_file_path, 'w', encoding='utf-8') as f:
-            for file_path in game_files:
-                f.write(file_path + '\n')
 
     def disable_transfer_button(self) -> None:
         self.transfer_button.bind('<Button-1>', lambda e: None)
