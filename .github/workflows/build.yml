@@ -153,6 +153,13 @@ jobs:
       with:
         path: artifacts
     
+    - name: List downloaded files
+      run: |
+        echo "=== Listing all downloaded files ==="
+        find artifacts -type f -name "*" | head -20
+        echo "=== Directory structure ==="
+        tree artifacts || find artifacts -type d
+    
     - name: Delete existing release
       run: |
         gh release delete ${{ github.ref_name }} --yes || true
@@ -191,9 +198,7 @@ jobs:
         files: |
           artifacts/EmuRomManager-windows/EmuRomManager.exe
           artifacts/EmuRomManager-macos/EmuRomManager-macos
-          artifacts/EmuRomManager-linux-ubuntu/EmuRomManager
-          artifacts/EmuRomManager-linux-fedora/EmuRomManager
-          artifacts/EmuRomManager-linux-arch/EmuRomManager
+          artifacts/EmuRomManager-linux-*/EmuRomManager
         fail_on_unmatched_files: false
         draft: false
         prerelease: false
