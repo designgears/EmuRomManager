@@ -163,9 +163,9 @@ jobs:
     - name: Prepare Linux artifacts for release
       run: |
         # Copy Linux executables to root with proper names
-        cp artifacts/EmuRomManager-linux-ubuntu/EmuRomManager artifacts/EmuRomManager-linux-ubuntu
-        cp artifacts/EmuRomManager-linux-fedora/EmuRomManager artifacts/EmuRomManager-linux-fedora
-        cp artifacts/EmuRomManager-linux-arch/EmuRomManager artifacts/EmuRomManager-linux-arch
+        cp artifacts/EmuRomManager-linux-ubuntu/EmuRomManager artifacts/EmuRomManager-linux-ubuntu-binary
+        cp artifacts/EmuRomManager-linux-fedora/EmuRomManager artifacts/EmuRomManager-linux-fedora-binary
+        cp artifacts/EmuRomManager-linux-arch/EmuRomManager artifacts/EmuRomManager-linux-arch-binary
         echo "=== Prepared files ==="
         ls -la artifacts/
     
@@ -207,9 +207,9 @@ jobs:
         files: |
           artifacts/EmuRomManager-windows/EmuRomManager.exe
           artifacts/EmuRomManager-macos/EmuRomManager-macos
-          artifacts/EmuRomManager-linux-ubuntu
-          artifacts/EmuRomManager-linux-fedora
-          artifacts/EmuRomManager-linux-arch
+          artifacts/EmuRomManager-linux-ubuntu-binary
+          artifacts/EmuRomManager-linux-fedora-binary
+          artifacts/EmuRomManager-linux-arch-binary
         fail_on_unmatched_files: false
         draft: false
         prerelease: false
