@@ -34,6 +34,7 @@ jobs:
         pip install pyinstaller
     
     - name: Debug and ensure ACORN exists
+      shell: bash
       run: |
         ls -la
         echo "=== Checking if ACORN exists ==="
