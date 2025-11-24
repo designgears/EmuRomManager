@@ -33,6 +33,16 @@ jobs:
         pip install -r requirements.txt
         pip install pyinstaller
     
+    - name: Debug and ensure ACORN exists
+      run: |
+        ls -la
+        echo "=== Checking if ACORN exists ==="
+        if [ ! -d "ACORN" ]; then
+          echo "ACORN not found, cloning manually..."
+          git clone https://github.com/designgears/ACORN.git
+        fi
+        ls -la ACORN/
+    
     - name: Build with PyInstaller (Linux)
       if: matrix.os == 'ubuntu-latest'
       run: |
