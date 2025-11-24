@@ -97,7 +97,7 @@ jobs:
           Choose the appropriate download for your platform:
           
           - **Windows**: `EmuRomManager.exe` - Windows executable
-          - **macOS**: `EmuRomManager` - macOS executable (Apple Silicon/Intel)
+          - **macOS**: `EmuRomManager-macos` - macOS executable (Apple Silicon/Intel)
           - **Linux**: `EmuRomManager` - Linux executable
           
           ### Installation
