@@ -84,6 +84,28 @@ jobs:
       if: startsWith(github.ref, 'refs/tags/')
       uses: softprops/action-gh-release@v1
       with:
+        name: EmuRomManager ${{ github.ref_name }}
+        body: |
+          ## EmuRomManager ${{ github.ref_name }}
+          
+          ### Downloads
+          
+          Choose the appropriate download for your platform:
+          
+          - **Windows**: `EmuRomManager.exe` - Windows executable
+          - **macOS**: `EmuRomManager` - macOS executable (Apple Silicon/Intel)
+          - **Linux**: `EmuRomManager` - Linux executable
+          
+          ### Installation
+          1. Download the file for your platform
+          2. Place `prod.keys` file in the same directory (for NSP/NSZ processing)
+          3. Run the executable
+          
+          ### Requirements
+          - Windows 10+ / macOS 10.13+ / Linux
+          - `prod.keys` file for Nintendo Switch title processing
+          
+          Full documentation available in the README.
         files: |
           dist/EmuRomManager
           dist/EmuRomManager.exe
