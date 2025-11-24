@@ -113,9 +113,11 @@ jobs:
     
     - name: Install dependencies
       run: |
-        python3 -m pip install --upgrade pip
-        pip3 install -r requirements.txt
-        pip3 install pyinstaller
+        python3 -m venv venv
+        source venv/bin/activate
+        pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
     
     - name: Debug and ensure ACORN exists
       run: |
@@ -129,7 +131,8 @@ jobs:
     
     - name: Build with PyInstaller
       run: |
-        python3 -m PyInstaller --clean EmuRomManager.spec
+        source venv/bin/activate
+        python -m PyInstaller --clean EmuRomManager.spec
     
     - name: Upload Linux artifact
       uses: actions/upload-artifact@v4
