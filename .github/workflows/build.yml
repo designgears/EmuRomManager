@@ -90,7 +90,7 @@ jobs:
     - name: Install packages (Alpine)
       if: matrix.distro == 'alpine'
       run: |
-        apk add --no-cache python3 py3-tkinter py3-pip git
+        apk add --no-cache python3 tk py3-pip git
     
     - name: Install packages (Fedora)
       if: matrix.distro == 'fedora'
