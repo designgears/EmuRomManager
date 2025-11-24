@@ -158,9 +158,9 @@ jobs:
     
     - name: Rename Linux files for release
       run: |
-        mv artifacts/EmuRomManager-linux-ubuntu/EmuRomManager artifacts/EmuRomManager-linux-ubuntu
-        mv artifacts/EmuRomManager-linux-fedora/EmuRomManager artifacts/EmuRomManager-linux-fedora
-        mv artifacts/EmuRomManager-linux-arch/EmuRomManager artifacts/EmuRomManager-linux-arch
+        mv artifacts/EmuRomManager-linux-ubuntu/EmuRomManager artifacts/EmuRomManager-linux-ubuntu-bin
+        mv artifacts/EmuRomManager-linux-fedora/EmuRomManager artifacts/EmuRomManager-linux-fedora-bin
+        mv artifacts/EmuRomManager-linux-arch/EmuRomManager artifacts/EmuRomManager-linux-arch-bin
         echo "=== Renamed files ==="
         ls -la artifacts/EmuRomManager-linux-*/
     
@@ -202,9 +202,9 @@ jobs:
         files: |
           artifacts/EmuRomManager-windows/EmuRomManager.exe
           artifacts/EmuRomManager-macos/EmuRomManager-macos
-          artifacts/EmuRomManager-linux-ubuntu
-          artifacts/EmuRomManager-linux-fedora
-          artifacts/EmuRomManager-linux-arch
+          artifacts/EmuRomManager-linux-ubuntu-bin
+          artifacts/EmuRomManager-linux-fedora-bin
+          artifacts/EmuRomManager-linux-arch-bin
         fail_on_unmatched_files: false
         draft: false
         prerelease: false
