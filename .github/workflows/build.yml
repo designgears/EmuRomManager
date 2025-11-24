@@ -1,5 +1,8 @@
 name: Build Executables
 
+permissions:
+  contents: write
+
 on:
   push:
     branches: [ main, master ]
@@ -109,6 +112,6 @@ jobs:
         files: |
           dist/EmuRomManager
           dist/EmuRomManager.exe
-          dist/EmuRomManager.app
+        fail_on_unmatched_files: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
