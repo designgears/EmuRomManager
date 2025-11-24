@@ -157,17 +157,6 @@ jobs:
       run: |
         echo "=== Listing all downloaded files ==="
         find artifacts -type f -name "*" | head -20
-        echo "=== Directory structure ==="
-        tree artifacts || find artifacts -type d
-    
-    - name: Prepare Linux artifacts for release
-      run: |
-        # Copy Linux executables to root with proper names
-        cp artifacts/EmuRomManager-linux-ubuntu/EmuRomManager artifacts/EmuRomManager-linux-ubuntu-binary
-        cp artifacts/EmuRomManager-linux-fedora/EmuRomManager artifacts/EmuRomManager-linux-fedora-binary
-        cp artifacts/EmuRomManager-linux-arch/EmuRomManager artifacts/EmuRomManager-linux-arch-binary
-        echo "=== Prepared files ==="
-        ls -la artifacts/
     
     - name: Delete existing release
       run: |
@@ -207,9 +196,9 @@ jobs:
         files: |
           artifacts/EmuRomManager-windows/EmuRomManager.exe
           artifacts/EmuRomManager-macos/EmuRomManager-macos
-          artifacts/EmuRomManager-linux-ubuntu-binary
-          artifacts/EmuRomManager-linux-fedora-binary
-          artifacts/EmuRomManager-linux-arch-binary
+          artifacts/EmuRomManager-linux-ubuntu/EmuRomManager
+          artifacts/EmuRomManager-linux-fedora/EmuRomManager
+          artifacts/EmuRomManager-linux-arch/EmuRomManager
         fail_on_unmatched_files: false
         draft: false
         prerelease: false
