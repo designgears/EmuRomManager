@@ -139,6 +139,7 @@ jobs:
       with:
         name: EmuRomManager-linux-${{ matrix.distro }}
         path: dist/EmuRomManager
+        if-no-files-found: error
 
   release:
     needs: [build, build-linux]
@@ -154,6 +155,14 @@ jobs:
       run: |
         echo "=== Listing all downloaded files ==="
         find artifacts -type f -name "*" | head -20
+    
+    - name: Rename Linux files for release
+      run: |
+        mv artifacts/EmuRomManager-linux-ubuntu/EmuRomManager artifacts/EmuRomManager-linux-ubuntu
+        mv artifacts/EmuRomManager-linux-fedora/EmuRomManager artifacts/EmuRomManager-linux-fedora
+        mv artifacts/EmuRomManager-linux-arch/EmuRomManager artifacts/EmuRomManager-linux-arch
+        echo "=== Renamed files ==="
+        ls -la artifacts/EmuRomManager-linux-*/
     
     - name: Delete existing release
       run: |
