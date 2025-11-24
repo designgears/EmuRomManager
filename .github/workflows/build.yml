@@ -114,11 +114,11 @@ jobs:
     - name: Install dependencies
       run: |
         if [ "${{ matrix.distro }}" = "alpine" ]; then
-          python3 -m pip install --upgrade pip --break-system-packages
-          python3 -m pip install -r requirements.txt --break-system-packages
-          python3 -m pip install pyinstaller --break-system-packages
+          python -m pip install --upgrade pip --break-system-packages
+          python -m pip install -r requirements.txt --break-system-packages
+          python -m pip install pyinstaller --break-system-packages
         else
-          python3 -m venv venv
+          python -m venv venv
           source venv/bin/activate
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
@@ -138,7 +138,7 @@ jobs:
     - name: Build with PyInstaller
       run: |
         if [ "${{ matrix.distro }}" = "alpine" ]; then
-          python3 -m PyInstaller --clean EmuRomManager.spec
+          python -m PyInstaller --clean EmuRomManager.spec
         else
           source venv/bin/activate
           python -m PyInstaller --clean EmuRomManager.spec
