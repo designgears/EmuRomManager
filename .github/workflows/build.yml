@@ -15,7 +15,7 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [windows-latest, macos-latest]
         
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
@@ -47,11 +47,6 @@ jobs:
         fi
         ls -la ACORN/
     
-    - name: Build with PyInstaller (Linux)
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        pyinstaller --clean EmuRomManager.spec
-    
     - name: Build with PyInstaller (Windows)
       if: matrix.os == 'windows-latest'
       run: |
@@ -62,13 +57,6 @@ jobs:
       run: |
         pyinstaller --clean EmuRomManager.spec
         mv dist/EmuRomManager dist/EmuRomManager-macos
-    
-    - name: Upload Linux artifact
-      if: matrix.os == 'ubuntu-latest'
-      uses: actions/upload-artifact@v4
-      with:
-        name: EmuRomManager-linux
-        path: dist/EmuRomManager
     
     - name: Upload Windows artifact
       if: matrix.os == 'windows-latest'
@@ -83,9 +71,83 @@ jobs:
       with:
         name: EmuRomManager-macos
         path: dist/EmuRomManager-macos
+
+  build-linux:
+    strategy:
+      matrix:
+        distro: [ubuntu, alpine, fedora, arch]
+        
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container: ${{ matrix.distro }}:latest
     
-    - name: Create Release (on tag)
-      if: startsWith(github.ref, 'refs/tags/')
+    steps:
+    - name: Install packages (Ubuntu)
+      if: matrix.distro == 'ubuntu'
+      run: |
+        apt-get update && apt-get install -y python3 python3-pip python3-tk python3-dev git
+    
+    - name: Install packages (Alpine)
+      if: matrix.distro == 'alpine'
+      run: |
+        apk add --no-cache python3 py3-tkinter py3-pip git
+    
+    - name: Install packages (Fedora)
+      if: matrix.distro == 'fedora'
+      run: |
+        dnf install -y python3 python3-pip python3-tkinter python3-devel git
+    
+    - name: Install packages (Arch)
+      if: matrix.distro == 'arch'
+      run: |
+        pacman -Syu --noconfirm python python-pip tk git
+    
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        python3 -m pip install --upgrade pip
+        pip3 install -r requirements.txt
+        pip3 install pyinstaller
+    
+    - name: Debug and ensure ACORN exists
+      run: |
+        ls -la
+        echo "=== Checking if ACORN exists ==="
+        if [ ! -d "ACORN" ]; then
+          echo "ACORN not found, cloning manually..."
+          git clone https://github.com/designgears/ACORN.git
+        fi
+        ls -la ACORN/
+    
+    - name: Build with PyInstaller
+      run: |
+        python3 -m PyInstaller --clean EmuRomManager.spec
+    
+    - name: Upload Linux artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: EmuRomManager-linux-${{ matrix.distro }}
+        path: dist/EmuRomManager
+
+  release:
+    needs: [build, build-linux]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+    
+    - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
         name: EmuRomManager ${{ github.ref_name }}
@@ -98,10 +160,14 @@ jobs:
           
           - **Windows**: `EmuRomManager.exe` - Windows executable
           - **macOS**: `EmuRomManager-macos` - macOS executable (Apple Silicon/Intel)
-          - **Linux**: `EmuRomManager` - Linux executable
+          - **Linux**: Multiple builds available for different distributions:
+            - `EmuRomManager-linux-ubuntu` - For Ubuntu/Debian-based systems
+            - `EmuRomManager-linux-alpine` - For Alpine Linux systems  
+            - `EmuRomManager-linux-fedora` - For Fedora/RHEL/CentOS systems
+            - `EmuRomManager-linux-arch`   - For Arch Linux systems
           
           ### Installation
-          1. Download the file for your platform
+          1. Download the file for your platform/distribution
           2. Place `prod.keys` file in the same directory (for NSP/NSZ processing)
           3. Run the executable
           
@@ -111,9 +177,12 @@ jobs:
           
           Full documentation available in the README.
         files: |
-          dist/EmuRomManager
-          dist/EmuRomManager.exe
-          dist/EmuRomManager-macos
+          artifacts/EmuRomManager-windows/EmuRomManager.exe
+          artifacts/EmuRomManager-macos/EmuRomManager-macos
+          artifacts/EmuRomManager-linux-ubuntu/EmuRomManager
+          artifacts/EmuRomManager-linux-alpine/EmuRomManager
+          artifacts/EmuRomManager-linux-fedora/EmuRomManager
+          artifacts/EmuRomManager-linux-arch/EmuRomManager
         fail_on_unmatched_files: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
