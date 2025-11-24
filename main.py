@@ -16,7 +16,8 @@ from typing import Dict, Optional
 from ttkbootstrap import Style
 
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ACORN'))
-from acorn import create_multi_xci
+from acorn import create_multi_xci, get_default_output_dir, cleanup_session_temp
+import atexit
 
 static_dir = os.path.dirname(os.path.abspath(__file__))
 script_dir = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
@@ -251,9 +252,8 @@ class GameManager:
         self.file_manager.load_data(os.path.join(script_dir, "result.json"))
         self.image_manager.check_queue(self.image_label)
         self.transfer_in_progress = False
-        self.process = None
-        self.current_filename = None
-        self.output_dir = None
+        self.output_dir = get_default_output_dir()
+        self.current_game = None
 
     def setup_ui(self) -> None:
         self.root.geometry("800x600")
@@ -275,7 +275,6 @@ class GameManager:
                 except Exception as e:
                     print(f"Could not load icon: {e}")
 
-        self.root.eval("tk::PlaceWindow . center")
         style = Style('darkly')
 
         style.configure("Treeview", rowheight=45, font=('Helvetica', 11))
@@ -407,20 +406,19 @@ class GameManager:
     def on_row_click(self, event: tk.Event) -> None:
         if self.transfer_in_progress:
             return
-        global current_game
         row_id = event.widget.identify_row(event.y)
         if row_id:
             item = event.widget.item(row_id, 'values')
             key = item[0][:-3]
 
-            current_game = self.file_manager.files[key]
+            self.current_game = self.file_manager.files[key]
 
-            self.game_name_label.config(text=current_game['name'])
-            self.game_intro_label.config(text=current_game['intro'] or "")
+            self.game_name_label.config(text=self.current_game['name'])
+            self.game_intro_label.config(text=self.current_game['intro'] or "")
             
             self.enable_transfer_button()
 
-            icon_url = current_game.get('iconUrl', os.path.join(script_dir, "images", "no.jpg"))
+            icon_url = self.current_game.get('iconUrl', os.path.join(script_dir, "images", "no_image.png"))
             self.image_manager.start_fetch_thread(icon_url, row_id, self.image_label)
 
     def update_transfer_ui(self, text: Optional[str] = None, progress: Optional[int] = None, info: Optional[str] = None, filename: Optional[str] = None) -> None:
@@ -434,9 +432,9 @@ class GameManager:
 
     def start_process(self, game: Dict) -> None:
         self.transfer_in_progress = True
+        # Use default output directory if not set
         if not self.output_dir:
-            self.update_transfer_ui(text=f"Output directory is not set.\n")
-            return
+            self.output_dir = get_default_output_dir()
         self.current_game_files = game['base'] + game['update'] + game['dlc']
         self.output_text.delete('1.0', tk.END)
         self.progress_var.set(0)
@@ -483,30 +481,14 @@ class GameManager:
             self.disable_cancel_button()
 
     def delete_output_files(self) -> None:
-        if self.current_filename:
-            file_path = os.path.join(self.output_dir, self.current_filename)
-            max_retries = 5
-            for attempt in range(max_retries):
-                try:
-                    if os.path.isfile(file_path):
-                        os.remove(file_path)
-                        self.update_transfer_ui(text=f"Deleted file: {file_path}\n")
-                    break
-                except Exception as e:
-                    if attempt < max_retries - 1:
-                        self.update_transfer_ui(text=f"Retrying to delete file: {file_path}. Attempt {attempt + 1}\n")
-                        time.sleep(1)
-                    else:
-                        self.update_transfer_ui(text=f"Error deleting file {file_path}: {e}\n")
-        else:
-            self.update_transfer_ui(text="No file to delete\n")
+        self.update_transfer_ui(text="No file cleanup needed\n")
 
     def disable_transfer_button(self) -> None:
         self.transfer_button.bind('<Button-1>', lambda e: None)
         self.transfer_button.config(state=tk.DISABLED)
 
     def enable_transfer_button(self) -> None:
-        self.transfer_button.bind('<Button-1>', lambda e: self.start_process(current_game))
+        self.transfer_button.bind('<Button-1>', lambda e: self.start_process(self.current_game))
         self.transfer_button.config(state=tk.NORMAL)
 
     def set_output_dir(self) -> None:
@@ -533,6 +515,8 @@ class GameManager:
         self.cancel_button.config(state=tk.NORMAL)
 
 if __name__ == "__main__":
+    # Register cleanup function to be called on exit
+    atexit.register(cleanup_session_temp)
     root = tk.Tk()
     app = GameManager(root)
     root.mainloop()
