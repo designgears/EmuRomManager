@@ -113,11 +113,17 @@ jobs:
     
     - name: Install dependencies
       run: |
-        python -m venv venv
-        source venv/bin/activate
-        python -m pip install --upgrade pip
-        python -m pip install -r requirements.txt
-        python -m pip install pyinstaller
+        if [ "${{ matrix.distro }}" = "alpine" ]; then
+          python3 -m pip install --upgrade pip --break-system-packages
+          python3 -m pip install -r requirements.txt --break-system-packages
+          python3 -m pip install pyinstaller --break-system-packages
+        else
+          python3 -m venv venv
+          source venv/bin/activate
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pyinstaller
+        fi
     
     - name: Debug and ensure ACORN exists
       run: |
@@ -131,8 +137,12 @@ jobs:
     
     - name: Build with PyInstaller
       run: |
-        source venv/bin/activate
-        python -m PyInstaller --clean EmuRomManager.spec
+        if [ "${{ matrix.distro }}" = "alpine" ]; then
+          python3 -m PyInstaller --clean EmuRomManager.spec
+        else
+          source venv/bin/activate
+          python -m PyInstaller --clean EmuRomManager.spec
+        fi
     
     - name: Upload Linux artifact
       uses: actions/upload-artifact@v4
