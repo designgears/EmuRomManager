@@ -153,6 +153,13 @@ jobs:
       with:
         path: artifacts
     
+    - name: Delete existing release
+      run: |
+        gh release delete ${{ github.ref_name }} --yes || true
+        gh release delete ${{ github.ref_name }} --yes --repo ${{ github.repository }} || true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
@@ -188,5 +195,7 @@ jobs:
           artifacts/EmuRomManager-linux-fedora/EmuRomManager
           artifacts/EmuRomManager-linux-arch/EmuRomManager
         fail_on_unmatched_files: false
+        draft: false
+        prerelease: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
