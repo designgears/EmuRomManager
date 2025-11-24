@@ -91,17 +91,17 @@ jobs:
     - name: Install packages (Ubuntu)
       if: matrix.distro == 'ubuntu'
       run: |
-        apt-get update && apt-get install -y python3 python3-pip python3-tk python3-dev git
+        apt-get update && apt-get install -y python3 python3-pip python3-tk python3-dev git binutils
     
     - name: Install packages (Fedora)
       if: matrix.distro == 'fedora'
       run: |
-        dnf install -y python3 python3-pip python3-tkinter python3-devel git
+        dnf install -y python3 python3-pip python3-tkinter python3-devel git binutils
     
     - name: Install packages (Arch)
       if: matrix.distro == 'arch'
       run: |
-        pacman -Syu --noconfirm python python-pip tk git
+        pacman -Syu --noconfirm python python-pip tk git binutils
     
     - uses: actions/checkout@v4
       with:
