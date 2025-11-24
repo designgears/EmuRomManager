@@ -60,7 +60,8 @@ jobs:
     - name: Build with PyInstaller (macOS)
       if: matrix.os == 'macos-latest'
       run: |
-        pyinstaller --clean EmuRomManager.spec
+        pyinstaller --clean --name EmuRomManager-macos EmuRomManager.spec
+        mv dist/EmuRomManager dist/EmuRomManager-macos
     
     - name: Upload Linux artifact
       if: matrix.os == 'ubuntu-latest'
@@ -81,7 +82,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: EmuRomManager-macos
-        path: dist/EmuRomManager
+        path: dist/EmuRomManager-macos
     
     - name: Create Release (on tag)
       if: startsWith(github.ref, 'refs/tags/')
@@ -112,6 +113,7 @@ jobs:
         files: |
           dist/EmuRomManager
           dist/EmuRomManager.exe
+          dist/EmuRomManager-macos
         fail_on_unmatched_files: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
