@@ -75,7 +75,7 @@ jobs:
   build-linux:
     strategy:
       matrix:
-        distro: [ubuntu, alpine, fedora, arch]
+        distro: [ubuntu, fedora, arch]
         
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -86,11 +86,6 @@ jobs:
       if: matrix.distro == 'ubuntu'
       run: |
         apt-get update && apt-get install -y python3 python3-pip python3-tk python3-dev git
-    
-    - name: Install packages (Alpine)
-      if: matrix.distro == 'alpine'
-      run: |
-        apk add --no-cache python3 tk py3-pip git
     
     - name: Install packages (Fedora)
       if: matrix.distro == 'fedora'
@@ -113,17 +108,11 @@ jobs:
     
     - name: Install dependencies
       run: |
-        if [ "${{ matrix.distro }}" = "alpine" ]; then
-          python -m pip install --upgrade pip --break-system-packages
-          python -m pip install -r requirements.txt --break-system-packages
-          python -m pip install pyinstaller --break-system-packages
-        else
-          python -m venv venv
-          source venv/bin/activate
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
-          python -m pip install pyinstaller
-        fi
+        python -m venv venv
+        source venv/bin/activate
+        python -m pip install --upgrade pip
+        python -m pip install -r requirements.txt
+        python -m pip install pyinstaller
     
     - name: Debug and ensure ACORN exists
       run: |
@@ -137,12 +126,8 @@ jobs:
     
     - name: Build with PyInstaller
       run: |
-        if [ "${{ matrix.distro }}" = "alpine" ]; then
-          python -m PyInstaller --clean EmuRomManager.spec
-        else
-          source venv/bin/activate
-          python -m PyInstaller --clean EmuRomManager.spec
-        fi
+        source venv/bin/activate
+        python -m PyInstaller --clean EmuRomManager.spec
     
     - name: Upload Linux artifact
       uses: actions/upload-artifact@v4
@@ -175,7 +160,6 @@ jobs:
           - **macOS**: `EmuRomManager-macos` - macOS executable (Apple Silicon/Intel)
           - **Linux**: Multiple builds available for different distributions:
             - `EmuRomManager-linux-ubuntu` - For Ubuntu/Debian-based systems
-            - `EmuRomManager-linux-alpine` - For Alpine Linux systems  
             - `EmuRomManager-linux-fedora` - For Fedora/RHEL/CentOS systems
             - `EmuRomManager-linux-arch`   - For Arch Linux systems
           
@@ -193,7 +177,6 @@ jobs:
           artifacts/EmuRomManager-windows/EmuRomManager.exe
           artifacts/EmuRomManager-macos/EmuRomManager-macos
           artifacts/EmuRomManager-linux-ubuntu/EmuRomManager
-          artifacts/EmuRomManager-linux-alpine/EmuRomManager
           artifacts/EmuRomManager-linux-fedora/EmuRomManager
           artifacts/EmuRomManager-linux-arch/EmuRomManager
         fail_on_unmatched_files: false
