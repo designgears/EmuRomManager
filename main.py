@@ -263,7 +263,17 @@ class GameManager:
 
         icon_path = os.path.join(script_dir, "switch.ico")
         if os.path.exists(icon_path):
-            self.root.iconbitmap(icon_path)
+            try:
+                # Try .ico format (works on Windows)
+                self.root.iconbitmap(icon_path)
+            except tk.TclError:
+                # Fallback for Linux/Mac - use PNG with iconphoto
+                try:
+                    icon_img = Image.open(icon_path)
+                    icon_photo = ImageTk.PhotoImage(icon_img)
+                    self.root.iconphoto(True, icon_photo)
+                except Exception as e:
+                    print(f"Could not load icon: {e}")
 
         self.root.eval("tk::PlaceWindow . center")
         style = Style('darkly')
