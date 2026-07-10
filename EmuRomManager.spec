@@ -3,12 +3,14 @@
 
 a = Analysis(
     ['main.py'],
-    pathex=[],
+    # ACORN is imported from a path added at runtime in main.py.  Make that
+    # path available during analysis too, otherwise PyInstaller only copies
+    # ACORN as data and misses its imports (including stdlib module uuid).
+    pathex=['ACORN'],
     binaries=[],
     datas=[
         ('images', 'images'),
         ('switch.ico', '.'),
-        ('ACORN', 'ACORN'),
     ],
     hiddenimports=[
         'Crypto',
